@@ -2,20 +2,23 @@ import subprocess
 from pathlib import Path
 
 
+RNX2RTKP_EXE = r"C:\development\RTKLIB_bin\bin\rnx2rtkp.exe"
+
+
+def _winpath(p: str) -> str:
+    return str(Path(p).resolve())
+
+
 def build_rtk_command(rover_obs: str, base_obs: str, nav_files: list[str],
                       output_path: str, config: dict) -> list[str]:
     """Build the rnx2rtkp command from configuration."""
-    cmd = ["rnx2rtkp"]
+    cmd = [RNX2RTKP_EXE]
 
     mode = config.get("mode", 2)
     cmd += ["-p", str(mode)]
 
     mask = config.get("elevation_mask", 15)
     cmd += ["-m", str(mask)]
-
-    constellations = config.get("constellations", ["G", "R"])
-    if constellations:
-        cmd += ["-sys", ",".join(constellations)]
 
     freq = config.get("frequencies", 2)
     cmd += ["-f", str(freq)]
@@ -50,10 +53,10 @@ def build_rtk_command(rover_obs: str, base_obs: str, nav_files: list[str],
         if lat != 0.0 or lon != 0.0:
             cmd += ["-l", str(lat), str(lon), str(hgt)]
 
-    cmd += ["-o", str(output_path)]
-    cmd.append(str(rover_obs))
-    cmd.append(str(base_obs))
-    cmd += [str(f) for f in nav_files]
+    cmd += ["-o", _winpath(output_path)]
+    cmd.append(_winpath(rover_obs))
+    cmd.append(_winpath(base_obs))
+    cmd += [_winpath(f) for f in nav_files]
 
     return cmd
 
@@ -72,13 +75,13 @@ def run_single_point(rover_obs: str, nav_files: list[str],
     """Run single-point positioning (no base station) for comparison."""
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
-    cmd = ["rnx2rtkp"]
+    cmd = [RNX2RTKP_EXE]
     cmd += ["-p", "0"]
     cmd += ["-m", "15"]
     cmd.append("-t")
-    cmd += ["-o", str(output_path)]
-    cmd.append(str(rover_obs))
-    cmd += [str(f) for f in nav_files]
+    cmd += ["-o", _winpath(output_path)]
+    cmd.append(_winpath(rover_obs))
+    cmd += [_winpath(f) for f in nav_files]
 
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
     return result.returncode, result.stdout, result.stderr

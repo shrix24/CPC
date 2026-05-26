@@ -5,11 +5,11 @@ from pathlib import Path
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QStackedWidget,
     QListWidget, QListWidgetItem, QPlainTextEdit, QMessageBox, QApplication,
-    QSplitter, QGroupBox, QSizePolicy, QProgressBar,
+    QSplitter, QGroupBox, QSizePolicy, QProgressBar, QRadioButton, QButtonGroup,
 )
 from PySide6.QtCore import Qt, QThread, Signal
 
-from ui.widgets.file_selector import FileSelector, DirectorySelector
+from ui.widgets.file_selector import FileSelector, MultiFileSelector, DirectorySelector
 from ui.widgets.rtk_config_panel import RTKConfigPanel
 from ui.widgets.conversion_status import ConversionStatus
 from ui.widgets.analysis_view import AnalysisView
@@ -78,7 +78,8 @@ class RTKWorker(QThread):
                 self.rover_obs, self.base_obs, self.nav_files,
                 self.output_path, self.config,
             )
-            self.log.emit(f"Command: {' '.join(cmd)}\n")
+            import shlex
+            self.log.emit(f"Command: {subprocess.list2cmdline(cmd)}\n")
 
             proc = subprocess.Popen(
                 cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
@@ -103,6 +104,7 @@ class RTKTab(QWidget):
         super().__init__(parent)
         self._vehicle_result = None
         self._base_result = None
+        self._direct_nav_files: list[str] = []
         self._rtk_output_path = None
         self._convert_worker = None
         self._rtk_worker = None
@@ -159,22 +161,74 @@ class RTKTab(QWidget):
         header.setStyleSheet("font-size: 16px; font-weight: bold; margin-bottom: 10px;")
         layout.addWidget(header)
 
-        desc = QLabel("Select the vehicle and base station .ubx files, and an output directory.")
-        desc.setWordWrap(True)
-        layout.addWidget(desc)
+        # --- Input mode toggle ---
+        mode_layout = QHBoxLayout()
+        mode_label = QLabel("Input format:")
+        mode_label.setStyleSheet("font-weight: bold;")
+        mode_layout.addWidget(mode_label)
+
+        self._ubx_radio = QRadioButton("Raw UBX files")
+        self._rinex_radio = QRadioButton("RINEX files (.obs / .nav)")
+        self._ubx_radio.setChecked(True)
+
+        self._input_mode_group = QButtonGroup(self)
+        self._input_mode_group.addButton(self._ubx_radio, 0)
+        self._input_mode_group.addButton(self._rinex_radio, 1)
+        self._input_mode_group.idToggled.connect(self._on_input_mode_changed)
+
+        mode_layout.addWidget(self._ubx_radio)
+        mode_layout.addWidget(self._rinex_radio)
+        mode_layout.addStretch()
+        layout.addLayout(mode_layout)
 
         layout.addSpacing(10)
 
+        # --- UBX selectors ---
+        self._ubx_group = QWidget()
+        ubx_layout = QVBoxLayout(self._ubx_group)
+        ubx_layout.setContentsMargins(0, 0, 0, 0)
+
+        ubx_desc = QLabel("Select the vehicle and base station .ubx files to convert to RINEX.")
+        ubx_desc.setWordWrap(True)
+        ubx_layout.addWidget(ubx_desc)
+
         self._vehicle_selector = FileSelector("Vehicle .ubx file:", "UBX files (*.ubx);;All Files (*)")
-        layout.addWidget(self._vehicle_selector)
+        ubx_layout.addWidget(self._vehicle_selector)
 
         self._base_selector = FileSelector("Base station .ubx file:", "UBX files (*.ubx);;All Files (*)")
-        layout.addWidget(self._base_selector)
+        ubx_layout.addWidget(self._base_selector)
 
+        layout.addWidget(self._ubx_group)
+
+        # --- RINEX selectors ---
+        self._rinex_group = QWidget()
+        rinex_layout = QVBoxLayout(self._rinex_group)
+        rinex_layout.setContentsMargins(0, 0, 0, 0)
+
+        rinex_desc = QLabel("Select rover and base .obs files, plus one or more navigation files (.nav, .gnav, .hnav, etc.).")
+        rinex_desc.setWordWrap(True)
+        rinex_layout.addWidget(rinex_desc)
+
+        nav_filter = "Navigation files (*.nav *.gnav *.hnav *.qnav *.lnav *.sbs);;All Files (*)"
+
+        self._rover_obs_selector = FileSelector("Rover .obs file:", "Observation files (*.obs);;All Files (*)")
+        rinex_layout.addWidget(self._rover_obs_selector)
+
+        self._base_obs_selector = FileSelector("Base station .obs file:", "Observation files (*.obs);;All Files (*)")
+        rinex_layout.addWidget(self._base_obs_selector)
+
+        self._nav_selector = MultiFileSelector("Navigation file(s):", nav_filter)
+        rinex_layout.addWidget(self._nav_selector)
+
+        self._rinex_group.setVisible(False)
+        layout.addWidget(self._rinex_group)
+
+        # --- Common ---
         self._output_dir_selector = DirectorySelector("Output directory:")
         layout.addWidget(self._output_dir_selector)
 
         self._vehicle_selector.file_selected.connect(self._on_vehicle_selected)
+        self._rover_obs_selector.file_selected.connect(self._on_vehicle_selected)
 
         layout.addStretch()
 
@@ -182,11 +236,58 @@ class RTKTab(QWidget):
         btn_layout.addStretch()
         self._step1_next = QPushButton("Next: Convert to RINEX →")
         self._step1_next.setStyleSheet("font-size: 14px; padding: 8px 20px;")
-        self._step1_next.clicked.connect(self._start_conversion)
+        self._step1_next.clicked.connect(self._step1_next_clicked)
         btn_layout.addWidget(self._step1_next)
         layout.addLayout(btn_layout)
 
         self._stack.addWidget(page)
+
+    def _on_input_mode_changed(self, button_id: int, checked: bool):
+        if not checked:
+            return
+        is_rinex = button_id == 1
+        self._ubx_group.setVisible(not is_rinex)
+        self._rinex_group.setVisible(is_rinex)
+        if is_rinex:
+            self._step1_next.setText("Next: Configure Processing →")
+        else:
+            self._step1_next.setText("Next: Convert to RINEX →")
+
+    def _step1_next_clicked(self):
+        if self._rinex_radio.isChecked():
+            self._use_rinex_files()
+        else:
+            self._start_conversion()
+
+    def _use_rinex_files(self):
+        rover_obs = self._rover_obs_selector.path()
+        base_obs = self._base_obs_selector.path()
+        nav_paths = self._nav_selector.paths()
+
+        if not rover_obs or not base_obs:
+            _show_msg(self, QMessageBox.Icon.Warning, "Missing Files",
+                      "Please select both rover and base station .obs files.")
+            return
+        if not nav_paths:
+            _show_msg(self, QMessageBox.Icon.Warning, "Missing Files",
+                      "Please select at least one navigation file.")
+            return
+
+        for path in [rover_obs, base_obs] + nav_paths:
+            if not os.path.isfile(path):
+                _show_msg(self, QMessageBox.Icon.Warning, "File Not Found", f"File not found:\n{path}")
+                return
+
+        output_dir = self._output_dir_selector.path()
+        if not output_dir:
+            output_dir = str(Path(rover_obs).parent / "rtk_output")
+            self._output_dir_selector.set_path(output_dir)
+
+        self._vehicle_result = {"obs": rover_obs}
+        self._base_result = {"obs": base_obs}
+        self._direct_nav_files = list(nav_paths)
+
+        self._prepare_config_step()
 
     def _on_vehicle_selected(self, path: str):
         if not self._output_dir_selector.path():
@@ -251,6 +352,7 @@ class RTKTab(QWidget):
             output_dir = str(Path(vehicle_path).parent / "rtk_output")
             self._output_dir_selector.set_path(output_dir)
 
+        self._direct_nav_files = []
         self._go_to_step(1)
         self._conv_progress_label.setText("Converting…")
         self._conv_progress_bar.setVisible(True)
@@ -307,7 +409,7 @@ class RTKTab(QWidget):
 
         btn_layout = QHBoxLayout()
         self._step3_back = QPushButton("← Back")
-        self._step3_back.clicked.connect(lambda: self._go_to_step(1))
+        self._step3_back.clicked.connect(self._step3_go_back)
         btn_layout.addWidget(self._step3_back)
         btn_layout.addStretch()
         self._step3_next = QPushButton("Next: Run Processing →")
@@ -317,6 +419,12 @@ class RTKTab(QWidget):
         layout.addLayout(btn_layout)
 
         self._stack.addWidget(page)
+
+    def _step3_go_back(self):
+        if self._rinex_radio.isChecked():
+            self._go_to_step(0)
+        else:
+            self._go_to_step(1)
 
     def _prepare_config_step(self):
         if self._base_result and "obs" in self._base_result:
@@ -393,22 +501,28 @@ class RTKTab(QWidget):
 
         self._stack.addWidget(page)
 
+    def _collect_nav_files(self) -> list[str]:
+        if self._direct_nav_files:
+            return list(self._direct_nav_files)
+        nav_files = []
+        for result in (self._vehicle_result, self._base_result):
+            for key in ("nav", "gnav", "hnav", "qnav", "lnav"):
+                if key in result and result[key] not in nav_files:
+                    nav_files.append(result[key])
+        return nav_files
+
     def _run_processing(self):
         if not self._vehicle_result or "obs" not in self._vehicle_result:
-            _show_msg(self, QMessageBox.Icon.Warning, "Missing Data", "No vehicle .obs file. Run conversion first.")
+            _show_msg(self, QMessageBox.Icon.Warning, "Missing Data", "No rover .obs file available. Go back to file selection.")
             return
         if not self._base_result or "obs" not in self._base_result:
-            _show_msg(self, QMessageBox.Icon.Warning, "Missing Data", "No base station .obs file. Run conversion first.")
+            _show_msg(self, QMessageBox.Icon.Warning, "Missing Data", "No base station .obs file available. Go back to file selection.")
             return
 
         rover_obs = self._vehicle_result["obs"]
         base_obs = self._base_result["obs"]
 
-        nav_files = []
-        for result in (self._vehicle_result, self._base_result):
-            for key in ("nav", "gnav", "hnav", "qnav", "lnav", "cnav", "inav"):
-                if key in result and result[key] not in nav_files:
-                    nav_files.append(result[key])
+        nav_files = self._collect_nav_files()
 
         output_dir = self._output_dir_selector.path()
         output_path = os.path.join(output_dir, "rtk_solution.pos")
@@ -478,11 +592,7 @@ class RTKTab(QWidget):
             return
 
         rover_obs = self._vehicle_result["obs"]
-        nav_files = []
-        for result in (self._vehicle_result, self._base_result):
-            for key in ("nav", "gnav", "hnav", "qnav", "lnav", "cnav", "inav"):
-                if key in result and result[key] not in nav_files:
-                    nav_files.append(result[key])
+        nav_files = self._collect_nav_files()
 
         output_dir = self._output_dir_selector.path()
         self._analysis_view.set_data(self._rtk_output_path, rover_obs, nav_files, output_dir)

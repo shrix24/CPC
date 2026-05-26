@@ -11,10 +11,6 @@ FILE_TYPE_LABELS = {
     "nav": "GPS Navigation",
     "gnav": "GLONASS Navigation",
     "hnav": "GEO Navigation",
-    "qnav": "QZSS Navigation",
-    "lnav": "Galileo Navigation",
-    "cnav": "BeiDou Navigation",
-    "inav": "IRNSS Navigation",
     "sbs": "SBAS Messages",
 }
 

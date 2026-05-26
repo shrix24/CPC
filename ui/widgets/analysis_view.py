@@ -6,7 +6,7 @@ from matplotlib.figure import Figure
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea,
     QTableWidget, QTableWidgetItem, QHeaderView, QFileDialog, QMessageBox,
-    QSplitter, QGroupBox, QSizePolicy,
+    QSplitter, QGroupBox, QSizePolicy, QTabWidget,
 )
 from PySide6.QtCore import Qt, Signal, QThread
 
@@ -90,14 +90,27 @@ class AnalysisView(QWidget):
         self._status_label.setVisible(False)
         layout.addWidget(self._status_label)
 
-        # --- Scrollable results area ---
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        self._results_widget = QWidget()
-        self._results_layout = QVBoxLayout(self._results_widget)
-        self._results_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        scroll.setWidget(self._results_widget)
-        layout.addWidget(scroll, 1)
+        # --- Tabbed results area ---
+        self._tabs = QTabWidget()
+        layout.addWidget(self._tabs, 1)
+
+        # Metrics tab
+        metrics_scroll = QScrollArea()
+        metrics_scroll.setWidgetResizable(True)
+        self._metrics_widget = QWidget()
+        self._metrics_layout = QVBoxLayout(self._metrics_widget)
+        self._metrics_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        metrics_scroll.setWidget(self._metrics_widget)
+        self._tabs.addTab(metrics_scroll, "Metrics")
+
+        # Plots tab
+        plots_scroll = QScrollArea()
+        plots_scroll.setWidgetResizable(True)
+        self._plots_widget = QWidget()
+        self._plots_layout = QVBoxLayout(self._plots_widget)
+        self._plots_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        plots_scroll.setWidget(self._plots_widget)
+        self._tabs.addTab(plots_scroll, "Plots")
 
     def set_data(self, rtk_pos_path: str, rover_obs: str, nav_files: list[str], output_dir: str):
         """Set paths needed for analysis."""
@@ -162,18 +175,19 @@ class AnalysisView(QWidget):
         self._run_btn.setEnabled(True)
 
     def _clear_results(self):
-        while self._results_layout.count():
-            item = self._results_layout.takeAt(0)
-            w = item.widget()
-            if w:
-                w.deleteLater()
+        for layout in (self._metrics_layout, self._plots_layout):
+            while layout.count():
+                item = layout.takeAt(0)
+                w = item.widget()
+                if w:
+                    w.deleteLater()
 
     def _generate_plots(self):
         self._clear_results()
 
         rtk_df = parse_pos_file(self._rtk_pos_path)
         if rtk_df.empty:
-            self._results_layout.addWidget(QLabel("RTK solution file is empty or could not be parsed."))
+            self._metrics_layout.addWidget(QLabel("RTK solution file is empty or could not be parsed."))
             return
 
         spp_df = None
@@ -194,7 +208,7 @@ class AnalysisView(QWidget):
                     "Could not parse ground truth file.")
                 truth_df = None
 
-        # --- Summary statistics ---
+        # --- Metrics tab ---
         rtk_stats = compute_statistics(rtk_df)
         self._add_stats_table("RTK Solution Statistics", rtk_stats)
 
@@ -202,25 +216,15 @@ class AnalysisView(QWidget):
             spp_stats = compute_statistics(spp_df)
             self._add_stats_table("Single-Point (Raw) Solution Statistics", spp_stats)
 
-        # --- Trajectory plot ---
+        # --- Plots tab ---
         self._add_trajectory_plot(rtk_df, spp_df, truth_df)
-
-        # --- Position time series ---
         self._add_position_timeseries(rtk_df, spp_df)
-
-        # --- Uncertainty time series ---
         self._add_uncertainty_plot(rtk_df)
-
-        # --- Jitter plot ---
         self._add_jitter_plot(rtk_df, spp_df)
-
-        # --- Satellite count ---
         self._add_satellite_plot(rtk_df)
-
-        # --- Fix quality ---
         self._add_quality_plot(rtk_df)
 
-        # --- Ground truth comparison ---
+        # --- Ground truth (metrics + plots) ---
         if truth_df is not None and not truth_df.empty:
             rtk_cmp = compare_to_ground_truth(rtk_df, truth_df)
             self._add_error_timeseries("RTK vs Ground Truth — Error", rtk_cmp)
@@ -272,7 +276,7 @@ class AnalysisView(QWidget):
             table.setItem(i, 1, QTableWidgetItem(val))
         table.setMaximumHeight(table.rowCount() * 30 + 30)
         layout.addWidget(table)
-        self._results_layout.addWidget(group)
+        self._metrics_layout.addWidget(group)
 
     def _add_trajectory_plot(self, rtk_df, spp_df, truth_df):
         fig = Figure(figsize=(10, 6))
@@ -299,7 +303,7 @@ class AnalysisView(QWidget):
         ax.grid(True, alpha=0.3)
         fig.tight_layout()
 
-        self._results_layout.addWidget(self._make_canvas(fig))
+        self._plots_layout.addWidget(self._make_canvas(fig))
 
     def _add_position_timeseries(self, rtk_df, spp_df):
         fig = Figure(figsize=(10, 8))
@@ -317,7 +321,7 @@ class AnalysisView(QWidget):
         axes[2].set_xlabel("Time")
         axes[0].set_title("Position Time Series")
         fig.tight_layout()
-        self._results_layout.addWidget(self._make_canvas(fig))
+        self._plots_layout.addWidget(self._make_canvas(fig))
 
     def _add_uncertainty_plot(self, rtk_df):
         fig = Figure(figsize=(10, 5))
@@ -333,7 +337,7 @@ class AnalysisView(QWidget):
         ax.grid(True, alpha=0.3)
         ax.set_yscale("log")
         fig.tight_layout()
-        self._results_layout.addWidget(self._make_canvas(fig))
+        self._plots_layout.addWidget(self._make_canvas(fig))
 
     def _add_jitter_plot(self, rtk_df, spp_df):
         from processing.analysis import compute_jitter
@@ -357,7 +361,7 @@ class AnalysisView(QWidget):
         axes[0].set_title("Epoch-to-Epoch Position Jitter")
         axes[2].set_xlabel("Time")
         fig.tight_layout()
-        self._results_layout.addWidget(self._make_canvas(fig))
+        self._plots_layout.addWidget(self._make_canvas(fig))
 
     def _add_satellite_plot(self, rtk_df):
         fig = Figure(figsize=(10, 3))
@@ -370,7 +374,7 @@ class AnalysisView(QWidget):
         ax.grid(True, alpha=0.3)
         ax.set_ylim(bottom=0)
         fig.tight_layout()
-        self._results_layout.addWidget(self._make_canvas(fig))
+        self._plots_layout.addWidget(self._make_canvas(fig))
 
     def _add_quality_plot(self, rtk_df):
         fig = Figure(figsize=(10, 3))
@@ -390,7 +394,7 @@ class AnalysisView(QWidget):
         ax.legend(fontsize=8, loc="upper right")
         ax.grid(True, alpha=0.3, axis="x")
         fig.tight_layout()
-        self._results_layout.addWidget(self._make_canvas(fig))
+        self._plots_layout.addWidget(self._make_canvas(fig))
 
     def _add_error_timeseries(self, title: str, cmp: dict):
         if not cmp:
@@ -410,7 +414,7 @@ class AnalysisView(QWidget):
         axes[0].set_title(title)
         axes[2].set_xlabel("Time")
         fig.tight_layout()
-        self._results_layout.addWidget(self._make_canvas(fig))
+        self._plots_layout.addWidget(self._make_canvas(fig))
 
     def _add_cdf_plot(self, rtk_cmp: dict, spp_cmp: dict | None):
         fig = Figure(figsize=(8, 5))
@@ -442,7 +446,7 @@ class AnalysisView(QWidget):
         ax.legend(fontsize=8)
         ax.grid(True, alpha=0.3)
         fig.tight_layout()
-        self._results_layout.addWidget(self._make_canvas(fig))
+        self._plots_layout.addWidget(self._make_canvas(fig))
 
     def _add_error_comparison_table(self, rtk_cmp: dict, spp_cmp: dict):
         group = QGroupBox("Error Comparison: RTK vs Raw SPP (relative to Ground Truth)")
@@ -473,4 +477,4 @@ class AnalysisView(QWidget):
             table.setItem(i, 2, QTableWidgetItem(spp_val))
         table.setMaximumHeight(table.rowCount() * 30 + 30)
         layout.addWidget(table)
-        self._results_layout.addWidget(group)
+        self._metrics_layout.addWidget(group)

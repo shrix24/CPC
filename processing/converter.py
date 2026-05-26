@@ -1,9 +1,18 @@
-import os
+import shutil
 import subprocess
 from pathlib import Path
 
+CONVBIN_EXE = r"C:\development\RTKLIB_bin\bin\convbin.exe"
 
-RINEX_EXTENSIONS = [".obs", ".nav", ".gnav", ".hnav", ".qnav", ".lnav", ".cnav", ".inav", ".sbs"]
+_RINEX_EXTENSIONS = {
+    "obs": ".obs",
+    "nav": ".nav",
+    "gnav": ".gnav",
+    "hnav": ".hnav",
+    "qnav": ".qnav",
+    "lnav": ".lnav",
+    "sbs": ".sbs",
+}
 
 
 def convert_ubx(ubx_path: str, output_dir: str) -> dict:
@@ -17,24 +26,21 @@ def convert_ubx(ubx_path: str, output_dir: str) -> dict:
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    cmd = [
-        "convbin",
-        "-r", "ubx",
-        "-v", "3.04",
-        "-od", "-os",
-        "-d", str(output_dir),
-        str(ubx_path),
-    ]
+    result = subprocess.run(
+        [CONVBIN_EXE, str(ubx_path)],
+        capture_output=True, text=True, timeout=300,
+    )
 
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+    stem = ubx_path.stem
+    src_dir = ubx_path.parent
 
     generated = {}
-    stem = ubx_path.stem
-    for ext in RINEX_EXTENSIONS:
-        candidate = output_dir / (stem + ext)
-        if candidate.exists() and candidate.stat().st_size > 0:
-            key = ext.lstrip(".")
-            generated[key] = str(candidate)
+    for key, ext in _RINEX_EXTENSIONS.items():
+        src = src_dir / f"{stem}{ext}"
+        if src.exists() and src.stat().st_size > 0:
+            dest = output_dir / src.name
+            shutil.move(str(src), str(dest))
+            generated[key] = str(dest)
 
     generated["returncode"] = result.returncode
     generated["stdout"] = result.stdout

@@ -42,6 +42,44 @@ class FileSelector(QWidget):
         self._edit.setText(path)
 
 
+class MultiFileSelector(QWidget):
+    """File picker that allows selecting multiple files."""
+
+    files_selected = Signal(list)
+
+    def __init__(self, label: str, file_filter: str = "All Files (*)", parent=None):
+        super().__init__(parent)
+        self._filter = file_filter
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        self._label = QLabel(label)
+        self._label.setFixedWidth(160)
+        layout.addWidget(self._label)
+
+        self._edit = QLineEdit()
+        self._edit.setPlaceholderText("No files selected")
+        self._edit.setReadOnly(True)
+        layout.addWidget(self._edit, 1)
+
+        self._btn = QPushButton("Browse…")
+        self._btn.clicked.connect(self._browse)
+        layout.addWidget(self._btn)
+
+        self._paths: list[str] = []
+
+    def _browse(self):
+        paths, _ = QFileDialog.getOpenFileNames(self, f"Select {self._label.text()}", "", self._filter)
+        if paths:
+            self._paths = paths
+            self._edit.setText("; ".join(paths))
+            self.files_selected.emit(paths)
+
+    def paths(self) -> list[str]:
+        return self._paths
+
+
 class DirectorySelector(QWidget):
     """Directory picker: label + text field + Browse button."""
 
