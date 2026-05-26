@@ -17,6 +17,12 @@ from processing.converter import convert_ubx, parse_rinex_header_position, ecef_
 from processing.rtk_processor import run_rtk, build_rtk_command
 
 
+def _show_msg(parent, icon, title, text):
+    msg = QMessageBox(icon, title, text, parent=parent)
+    msg.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+    msg.exec()
+
+
 STEPS = [
     "1. File Selection",
     "2. RINEX Conversion",
@@ -230,14 +236,14 @@ class RTKTab(QWidget):
         base_path = self._base_selector.path()
 
         if not vehicle_path or not base_path:
-            QMessageBox.warning(self, "Missing Files", "Please select both vehicle and base station .ubx files.")
+            _show_msg(self, QMessageBox.Icon.Warning, "Missing Files", "Please select both vehicle and base station .ubx files.")
             return
 
         if not os.path.isfile(vehicle_path):
-            QMessageBox.warning(self, "File Not Found", f"Vehicle file not found:\n{vehicle_path}")
+            _show_msg(self, QMessageBox.Icon.Warning, "File Not Found", f"Vehicle file not found:\n{vehicle_path}")
             return
         if not os.path.isfile(base_path):
-            QMessageBox.warning(self, "File Not Found", f"Base station file not found:\n{base_path}")
+            _show_msg(self, QMessageBox.Icon.Warning, "File Not Found", f"Base station file not found:\n{base_path}")
             return
 
         output_dir = self._output_dir_selector.path()
@@ -267,11 +273,11 @@ class RTKTab(QWidget):
         self._base_status.set_results("Base Station Files", base_result)
 
         if "obs" not in vehicle_result:
-            QMessageBox.critical(self, "Conversion Failed",
+            _show_msg(self, QMessageBox.Icon.Critical, "Conversion Failed",
                 "Vehicle .obs file was not generated. Check that the .ubx file contains valid observation data.")
             return
         if "obs" not in base_result:
-            QMessageBox.critical(self, "Conversion Failed",
+            _show_msg(self, QMessageBox.Icon.Critical, "Conversion Failed",
                 "Base station .obs file was not generated. Check that the .ubx file contains valid observation data.")
             return
 
@@ -280,7 +286,7 @@ class RTKTab(QWidget):
     def _on_conversion_error(self, msg: str):
         self._conv_progress_bar.setVisible(False)
         self._conv_progress_label.setText("Conversion failed.")
-        QMessageBox.critical(self, "Conversion Error", msg)
+        _show_msg(self, QMessageBox.Icon.Critical, "Conversion Error", msg)
 
     # ─── Step 3: RTK Configuration ───
 
@@ -389,10 +395,10 @@ class RTKTab(QWidget):
 
     def _run_processing(self):
         if not self._vehicle_result or "obs" not in self._vehicle_result:
-            QMessageBox.warning(self, "Missing Data", "No vehicle .obs file. Run conversion first.")
+            _show_msg(self, QMessageBox.Icon.Warning, "Missing Data", "No vehicle .obs file. Run conversion first.")
             return
         if not self._base_result or "obs" not in self._base_result:
-            QMessageBox.warning(self, "Missing Data", "No base station .obs file. Run conversion first.")
+            _show_msg(self, QMessageBox.Icon.Warning, "Missing Data", "No base station .obs file. Run conversion first.")
             return
 
         rover_obs = self._vehicle_result["obs"]
@@ -430,7 +436,7 @@ class RTKTab(QWidget):
         if returncode != 0:
             self._log_area.appendPlainText(f"\nProcess exited with code {returncode}")
             if not os.path.isfile(output_path):
-                QMessageBox.critical(self, "Processing Failed",
+                _show_msg(self, QMessageBox.Icon.Critical, "Processing Failed",
                     f"rnx2rtkp exited with code {returncode}.\nCheck the log for details.")
                 return
 
@@ -441,7 +447,7 @@ class RTKTab(QWidget):
             self._step4_next.setEnabled(True)
             self._log_area.appendPlainText(f"\nOutput written to: {output_path}")
         else:
-            QMessageBox.warning(self, "No Output",
+            _show_msg(self, QMessageBox.Icon.Warning, "No Output",
                 "Processing completed but no output file was generated.\n"
                 "This may indicate no valid solutions were computed.")
 
@@ -468,7 +474,7 @@ class RTKTab(QWidget):
 
     def _go_to_analysis(self):
         if not self._rtk_output_path:
-            QMessageBox.warning(self, "No Data", "Run RTK processing first.")
+            _show_msg(self, QMessageBox.Icon.Warning, "No Data", "Run RTK processing first.")
             return
 
         rover_obs = self._vehicle_result["obs"]

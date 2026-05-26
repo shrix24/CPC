@@ -17,6 +17,12 @@ from processing.analysis import (
 from processing.rtk_processor import run_single_point
 
 
+def _show_msg(parent, icon, title, text):
+    msg = QMessageBox(icon, title, text, parent=parent)
+    msg.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+    msg.exec()
+
+
 Q_COLORS = {1: "#2ecc71", 2: "#f39c12", 3: "#3498db", 4: "#9b59b6", 5: "#e74c3c", 6: "#1abc9c"}
 Q_LABELS = {1: "Fix", 2: "Float", 3: "SBAS", 4: "DGPS", 5: "Single", 6: "PPP"}
 
@@ -80,6 +86,7 @@ class AnalysisView(QWidget):
         layout.addWidget(self._run_btn)
 
         self._status_label = QLabel()
+        self._status_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self._status_label.setVisible(False)
         layout.addWidget(self._status_label)
 
@@ -108,11 +115,9 @@ class AnalysisView(QWidget):
             return
 
         if is_rinex_observation(path):
-            QMessageBox.warning(
-                self, "Invalid File",
+            _show_msg(self, QMessageBox.Icon.Warning, "Invalid File",
                 "This appears to be a RINEX observation file, not a position solution.\n"
-                "Please provide a position solution file (.pos) or CSV with lat/lon/height columns."
-            )
+                "Please provide a position solution file (.pos) or CSV with lat/lon/height columns.")
             return
 
         self._ground_truth_path = path
@@ -128,7 +133,7 @@ class AnalysisView(QWidget):
 
     def _run_analysis(self):
         if not self._rtk_pos_path:
-            QMessageBox.warning(self, "No Data", "No RTK solution file available. Run processing first.")
+            _show_msg(self, QMessageBox.Icon.Warning, "No Data", "No RTK solution file available. Run processing first.")
             return
 
         self._run_btn.setEnabled(False)
@@ -181,11 +186,11 @@ class AnalysisView(QWidget):
         if self._ground_truth_path:
             truth_df = parse_ground_truth(self._ground_truth_path)
             if truth_df is None:
-                QMessageBox.warning(self, "Invalid File",
+                _show_msg(self, QMessageBox.Icon.Warning, "Invalid File",
                     "Ground truth file appears to be a RINEX observation file.")
                 truth_df = None
             elif truth_df.empty:
-                QMessageBox.warning(self, "Parse Error",
+                _show_msg(self, QMessageBox.Icon.Warning, "Parse Error",
                     "Could not parse ground truth file.")
                 truth_df = None
 

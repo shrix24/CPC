@@ -42,6 +42,7 @@ class ConversionStatus(QWidget):
         self._error_label = QLabel()
         self._error_label.setStyleSheet("color: red;")
         self._error_label.setWordWrap(True)
+        self._error_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self._error_label.setVisible(False)
         layout.addWidget(self._error_label)
 
