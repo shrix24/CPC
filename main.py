@@ -1,6 +1,7 @@
 import shutil
 import sys
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from ui.main_window import MainWindow
@@ -15,8 +16,8 @@ def check_dependencies():
 
     if missing:
         app = QApplication(sys.argv)
-        QMessageBox.critical(
-            None,
+        msg = QMessageBox(
+            QMessageBox.Icon.Critical,
             "Missing Dependencies",
             f"The following RTKLIB tools were not found on PATH:\n\n"
             f"  {', '.join(missing)}\n\n"
@@ -24,6 +25,8 @@ def check_dependencies():
             f"On Ubuntu/Debian: sudo apt install rtklib\n"
             f"On macOS: brew install rtklib",
         )
+        msg.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        msg.exec()
         sys.exit(1)
 
 
