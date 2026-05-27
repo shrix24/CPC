@@ -1,0 +1,6 @@
+# gnb_clock_estimator dependencies
+# (PySide6 and matplotlib are already required by the parent CPC application)
+numpy>=1.24
+pandas>=2.0
+matplotlib>=3.7
+PySide6>=6.5
